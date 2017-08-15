@@ -31,7 +31,7 @@ def create_model(session, args, forward_only=True):
 
   # for tensorboard
   if args.en_tfboard:
-    summary_writer = tf.train.SummaryWriter(args.tf_board_dir, session.graph)
+    summary_writer = tf.summary.FileWriter(args.tf_board_dir, session.graph)
 
   ckpt = tf.train.get_checkpoint_state(args.model_dir)
   # if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
@@ -165,6 +165,6 @@ def get_predicted_sentence(args, input_sentence, vocab, rev_vocab, model, sess, 
     # post-process results
     res_cands = []
     for prob, _, cand in sorted(results, reverse=True):
-      cand['dec_inp'] = " ".join([dict_lookup(rev_vocab, w) for w in cand['dec_inp']])
+      cand['dec_inp'] = " ".join([dict_lookup(rev_vocab, w[0]) for w in cand['dec_inp']])
       res_cands.append(cand)
     return res_cands[:args.beam_size]
