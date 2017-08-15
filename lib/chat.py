@@ -7,31 +7,92 @@ from lib import data_utils
 from lib.seq2seq_model_utils import create_model, get_predicted_sentence
 
 
-def chat(args):
-  with tf.Session() as sess:
-    # Create model and load parameters.
-    args.batch_size = 1  # We decode one sentence at a time.
-    model = create_model(sess, args)
+def sample_index(probabilies):
+    from random import random
+    total = sum(probabilies)
 
-    # Load vocabularies.
-    vocab_path = os.path.join(args.data_dir, "vocab%d.in" % args.vocab_size)
-    vocab, rev_vocab = data_utils.initialize_vocabulary(vocab_path)
+    index = 0
+    value = random()
 
-    # Decode from standard input.
-    sys.stdout.write("> ")
-    sys.stdout.flush()
-    sentence = sys.stdin.readline()
-
-    while sentence:
-        predicted_sentence = get_predicted_sentence(args, sentence, vocab, rev_vocab, model, sess)
-        # print(predicted_sentence)
-        if isinstance(predicted_sentence, list):
-            for sent in predicted_sentence:
-                print("  (%s) -> %s" % (sent['prob'], sent['dec_inp']))
+    while True:
+        value -= probabilies[index] / total
+        if value <= 0:
+            break
         else:
-            print(sentence, ' -> ', predicted_sentence)
-            
+            index += 1
+
+    return index
+
+
+class ChatService:
+
+    def __init__(self, args, session):
+        self.args = args
+        self.args.batch_size = 1
+        self.session = session
+        self.model = create_model(session, self.args)
+
+        vocab_path = os.path.join(
+            args.data_dir,
+            "vocab%d.in" % args.vocab_size,
+        )
+
+        self.vocab, self.rev_vocab = data_utils.initialize_vocabulary(
+            vocab_path
+        )
+
+    def _get_predicted_sentence(self, sentence):
+        return get_predicted_sentence(
+            self.args, sentence, self.vocab,
+            self.rev_vocab, self.model, self.session,
+        )
+
+    def _decode_output_to_text(self, decode_output):
+        decode_output = decode_output.replace('_GO', '')
+        decode_output = decode_output.replace(' _EOS', '')
+        decode_output = decode_output.replace(' _PAD', '')
+
+        return decode_output
+
+    def get_response(self, sentence):
+        predicted_sentence = self._get_predicted_sentence(sentence)
+
+        if isinstance(predicted_sentence, list):
+            selected_index = sample_index(
+                [x['prob'] for x in predicted_sentence]
+            )
+            return self._decode_output_to_text(
+                predicted_sentence[selected_index]['dec_inp']
+            )
+
+        return predicted_sentence
+
+
+def chat(args):
+    with tf.Session() as session:
+        service = ChatService(args, session)
+
+        while True:
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            sentence = sys.stdin.readline()
+
+            if not session:
+                break
+
+            print(service.get_response(sentence))
+
+
+def self_chat(args):
+    with tf.Session() as session:
+        service = ChatService(args, session)
+
         sys.stdout.write("> ")
         sys.stdout.flush()
         sentence = sys.stdin.readline()
 
+        while True:
+            sentence = service.get_response(sentence)
+            print('>', sentence)
+            if sys.stdin.readline() == 'q':
+                break
